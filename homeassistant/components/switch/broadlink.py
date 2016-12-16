@@ -17,7 +17,7 @@ from homeassistant.util.dt import utcnow
 from homeassistant.components.switch import (SwitchDevice, PLATFORM_SCHEMA)
 from homeassistant.const import (CONF_FRIENDLY_NAME, CONF_SWITCHES,
                                  CONF_COMMAND_OFF, CONF_COMMAND_ON,
-                                 CONF_TIMEOUT, CONF_HOST, CONF_MAC)
+                                 CONF_TIMEOUT, CONF_HOST, CONF_MAC, CONF_TYPE)
 import homeassistant.helpers.config_validation as cv
 
 REQUIREMENTS = ['broadlink==0.2']
@@ -28,6 +28,7 @@ DOMAIN = "broadlink"
 DEFAULT_NAME = 'Broadlink switch'
 DEFAULT_TIMEOUT = 10
 SERVICE_LEARN = "learn_command"
+DEFAULT_TYPE = "RM2"
 
 SWITCH_SCHEMA = vol.Schema({
     vol.Optional(CONF_COMMAND_OFF, default=None): cv.string,
@@ -39,6 +40,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Optional(CONF_SWITCHES): vol.Schema({cv.slug: SWITCH_SCHEMA}),
     vol.Required(CONF_HOST): cv.string,
     vol.Required(CONF_MAC): cv.string,
+    vol.Required(CONF_TYPE, default=DEFAULT_TYPE): cv.string,
     vol.Optional(CONF_TIMEOUT, default=DEFAULT_TIMEOUT): cv.positive_int
 })
 
@@ -51,7 +53,10 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
     ip_addr = config.get(CONF_HOST)
     mac_addr = binascii.unhexlify(
         config.get(CONF_MAC).encode().replace(b':', b''))
-    broadlink_device = broadlink.rm((ip_addr, 80), mac_addr)
+    if (config.get(CONF_TYPE) == 'MP') or (config.get(CONF_TYPE) == 'SP'):
+        broadlink_device = broadlink.sp2((ip_addr, 80), mac_addr)
+    else: 
+        broadlink_device = broadlink.rm((ip_addr, 80), mac_addr)
     broadlink_device.timeout = config.get(CONF_TIMEOUT)
     try:
         broadlink_device.auth()
@@ -122,7 +127,10 @@ class BroadlinkRM2Switch(SwitchDevice):
     @property
     def assumed_state(self):
         """Return true if unable to access real state of entity."""
-        return True
+        if self._device.type=="RM2":
+            return True
+        else:
+            return self._check_power()
 
     @property
     def is_on(self):
@@ -131,13 +139,19 @@ class BroadlinkRM2Switch(SwitchDevice):
 
     def turn_on(self, **kwargs):
         """Turn the device on."""
-        if self._sendpacket(self._command_on):
-            self._state = True
-
+        if self._device.type=="RM2":
+            self._sendpacket(self._command_on)
+        else:
+            self._set_power(1)    
+        self._state = True
+        
     def turn_off(self, **kwargs):
         """Turn the device off."""
-        if self._sendpacket(self._command_off):
-            self._state = False
+        if self._device.type=="RM2":
+            self._sendpacket(self._command_on)
+        else:
+            self._set_power(0)    
+        self._state = False
 
     def _sendpacket(self, packet, retry=2):
         """Send packet to device."""
@@ -156,3 +170,11 @@ class BroadlinkRM2Switch(SwitchDevice):
                 pass
             return self._sendpacket(packet, max(0, retry-1))
         return True
+
+    def _check_power(self):
+        """Check power"""
+        return self._device.check_power()
+
+    def _set_power(self,state):
+        """Set power"""
+        return self._device.set_power(state)
