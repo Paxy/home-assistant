@@ -1,4 +1,3 @@
-
 """
 Support for the Broadlink RM2 Pro (only temperature) and A1 devices.
 
@@ -95,8 +94,11 @@ class BroadlinkSensor(Entity):
 
     def update(self):
         """Get the latest data from the sensor."""
+        MAX_TEMP=100
         self._broadlink_data.update()
         if self._broadlink_data.data is None:
+            return
+        if self._broadlink_data.data[self._type] > MAX_TEMP:
             return
         self._state = self._broadlink_data.data[self._type]
 
